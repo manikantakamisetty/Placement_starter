@@ -1,0 +1,5 @@
+{
+  "name": "PlacementPro AI",
+  "description": "AI-powered career placement platform for beginners and veterans with roadmaps, schedules, and community features.",
+  "requestFramePermissions": ["geolocation"]
+}
