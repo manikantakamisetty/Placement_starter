@@ -4,18 +4,66 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 export const geminiModel = "gemini-3-flash-preview";
 
-export async function generateRoadmap(domain: string) {
+export async function generateDomainTopics(domains: string[], courses: string) {
   const response = await ai.models.generateContent({
     model: geminiModel,
-    contents: `Generate a detailed 8-week roadmap for learning ${domain}. Format it as a week-by-week guide with specific topics and goals for each week. Use Markdown.`,
+    contents: `Based on these recommended courses:
+    ${courses}
+    
+    List the core technical topics and key concepts for the following domains: ${domains.join(", ")}. 
+    Ensure the topics align with the course content provided.
+    Format the output as a structured list of topics with sub-concepts. This will be used to build a roadmap.`,
   });
   return response.text;
 }
 
-export async function generateSchedule(domain: string) {
+export async function generateRoadmap(domains: string[], topics: string, courses: string) {
   const response = await ai.models.generateContent({
     model: geminiModel,
-    contents: `Generate a daily 8-week study schedule for ${domain}. Include morning, afternoon, and evening sessions. Use Markdown.`,
+    contents: `Based on these core topics:
+    ${topics}
+    
+    And these recommended courses/resources:
+    ${courses}
+    
+    Generate a detailed 8-week roadmap for learning ${domains.join(" and ")}. 
+    Ensure the roadmap aligns with the topics covered in the courses.
+    Structure it visually using Markdown tables or clear headers for each week. 
+    For each week, include:
+    - Main Topic
+    - Key Concepts (bullet points)
+    - Estimated Difficulty (1-5)
+    - Recommended Study Hours
+    Make it look like a professional planning document.`,
+  });
+  return response.text;
+}
+
+export async function generateSchedule(roadmap: string, courses: string) {
+  const response = await ai.models.generateContent({
+    model: geminiModel,
+    contents: `Convert the following 8-week roadmap into a daily study schedule:
+    ${roadmap}
+    
+    Context from courses:
+    ${courses}
+    
+    For each day, provide a structured timetable:
+    - 09:00 - 12:00: Deep Work / Core Concepts (aligned with course modules)
+    - 14:00 - 17:00: Practical Implementation / Coding
+    - 19:00 - 21:00: Review & Quiz
+    
+    Adjust the intensity based on the "Estimated Difficulty" and "Study Hours" mentioned in the roadmap. 
+    Format as a Markdown table or a clear structured list.`,
+  });
+  return response.text;
+}
+
+export async function generateKeyConcepts(topic: string) {
+  const response = await ai.models.generateContent({
+    model: geminiModel,
+    contents: `List 10 essential key concepts and sub-topics for someone learning "${topic}". 
+    Format as a simple bulleted list.`,
   });
   return response.text;
 }

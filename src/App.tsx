@@ -35,7 +35,9 @@ import {
   generateJobOpenings, 
   generateLinkedInPortfolio, 
   generateQuizQuestion,
-  compareCredits 
+  compareCredits,
+  generateDomainTopics,
+  generateKeyConcepts
 } from './services/gemini';
 
 // --- Types ---
@@ -57,22 +59,37 @@ interface Project {
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('login');
   const [userType, setUserType] = useState<UserType | null>(null);
-  const [selectedDomain, setSelectedDomain] = useState<string>('');
+  const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
   const [isPhoneLogin, setIsPhoneLogin] = useState(false);
   const [showReadMore, setShowReadMore] = useState(false);
   const [activeTab, setActiveTab] = useState('roadmap');
   const [credits, setCredits] = useState(0);
   const [projects, setProjects] = useState<Project[]>([]);
   const [likedProjects, setLikedProjects] = useState<Set<string>>(new Set());
+  const [userProfile, setUserProfile] = useState({
+    fullName: '',
+    headline: '',
+    photo: '',
+    location: '',
+    email: '',
+    phone: '',
+    portfolio: '',
+    github: '',
+    linkedinUrl: ''
+  });
 
   // AI Content States
+  const [domainTopics, setDomainTopics] = useState('');
   const [roadmap, setRoadmap] = useState('');
   const [schedule, setSchedule] = useState('');
   const [courses, setCourses] = useState('');
   const [openings, setOpenings] = useState('');
   const [linkedin, setLinkedin] = useState('');
+  const [keyConcepts, setKeyConcepts] = useState('');
   const [quiz, setQuiz] = useState<any>(null);
+  const [quizLanguage, setQuizLanguage] = useState('JavaScript');
   const [loading, setLoading] = useState(false);
+  const [checklist, setChecklist] = useState<{id: number, text: string, done: boolean, keyPoints: string[]}[]>([]);
 
   const domains = [
     "Web Development", "Cyber Security", "Block Chain", "IOT", 
@@ -110,6 +127,32 @@ Business Analyst (BA): Translates business needs into technical requirements for
 
   // --- Handlers ---
 
+  const resetAppState = () => {
+    setUserType(null);
+    setSelectedDomains([]);
+    setDomainTopics('');
+    setRoadmap('');
+    setSchedule('');
+    setCourses('');
+    setOpenings('');
+    setLinkedin('');
+    setKeyConcepts('');
+    setQuiz(null);
+    setCredits(0);
+    setChecklist([]);
+    setUserProfile({
+      fullName: '',
+      headline: '',
+      photo: '',
+      location: '',
+      email: '',
+      phone: '',
+      portfolio: '',
+      github: '',
+      linkedinUrl: ''
+    });
+  };
+
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setCurrentPage('dashboard');
@@ -117,56 +160,108 @@ Business Analyst (BA): Translates business needs into technical requirements for
 
   const handleSignup = (e: React.FormEvent) => {
     e.preventDefault();
+    resetAppState();
     setCurrentPage('onboarding');
   };
 
-  const handleDomainSelect = (domain: string) => {
-    setSelectedDomain(domain);
-    if (userType === 'veteran') {
+  const handleDomainToggle = (domain: string) => {
+    setSelectedDomains(prev => 
+      prev.includes(domain) ? prev.filter(d => d !== domain) : [...prev, domain]
+    );
+  };
+
+  const handleOnboardingNext = async () => {
+    if (selectedDomains.length === 0) return;
+    setLoading(true);
+    try {
+      // 1. Generate Courses Initially
+      const coursesRes = await generateCourses(selectedDomains);
+      setCourses(coursesRes || '');
+
+      // 2. Generate Domain Topics
+      const topics = await generateDomainTopics(selectedDomains, coursesRes || '');
+      setDomainTopics(topics || '');
+      
       setCurrentPage('dashboard');
+      // Default tab for veterans is openings
+      if (userType === 'veteran') setActiveTab('openings');
+    } catch (error) {
+      console.error("Error during onboarding generation:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
   const fetchRoadmap = async () => {
     setLoading(true);
-    const res = await generateRoadmap(selectedDomain);
+    const res = await generateRoadmap(selectedDomains, domainTopics, courses);
     setRoadmap(res || '');
+    // Also fetch key concepts for the checklist
+    const concepts = await generateKeyConcepts(`Based on these courses: ${courses}, list 10 essential key concepts for ${selectedDomains.join(", ")}`);
+    setKeyConcepts(concepts || '');
     setLoading(false);
   };
 
-  const fetchSchedule = async () => {
+  const fetchQuiz = async (category: string, level: string) => {
     setLoading(true);
-    const res = await generateSchedule(selectedDomain);
+    const res = await generateQuizQuestion(category, quizLanguage, level);
+    setQuiz(res);
+    setLoading(false);
+  };
+
+  const fetchScheduleFromRoadmap = async () => {
+    if (!roadmap) {
+      alert("Please generate a roadmap first!");
+      return;
+    }
+    setLoading(true);
+    const res = await generateSchedule(roadmap, courses);
     setSchedule(res || '');
     setLoading(false);
   };
 
   const fetchCourses = async () => {
     setLoading(true);
-    const res = await generateCourses([selectedDomain]);
+    const res = await generateCourses(selectedDomains);
     setCourses(res || '');
     setLoading(false);
   };
 
   const fetchOpenings = async (address: string) => {
     setLoading(true);
-    const res = await generateJobOpenings(selectedDomain, address);
+    const res = await generateJobOpenings(selectedDomains.join(", "), address);
     setOpenings(res || '');
     setLoading(false);
   };
 
   const fetchLinkedin = async () => {
     setLoading(true);
-    const res = await generateLinkedInPortfolio(userType || 'beginner', selectedDomain);
+    const res = await generateLinkedInPortfolio(userType || 'beginner', selectedDomains.join(", "));
     setLinkedin(res || '');
     setLoading(false);
   };
 
-  const fetchQuiz = async (category: string, lang: string, level: string) => {
+  const fetchKeyConcepts = async () => {
+    if (selectedDomains.length === 0) return;
     setLoading(true);
-    const res = await generateQuizQuestion(category, lang, level);
-    setQuiz(res);
+    const res = await generateKeyConcepts(`Based on these courses: ${courses}, list 10 essential key concepts for ${selectedDomains.join(", ")}`);
+    setKeyConcepts(res || '');
     setLoading(false);
+  };
+
+  const addConceptsToChecklist = () => {
+    if (!keyConcepts) return;
+    const lines = keyConcepts.split('\n');
+    const newTasks = lines
+      .map(line => line.replace(/^[-*]\s+/, '').replace(/^\d+\.\s+/, '').trim())
+      .filter(line => line && line.length > 3 && !line.toLowerCase().includes('here are') && !line.toLowerCase().includes('key concepts'))
+      .map(text => ({
+        id: Date.now() + Math.random(),
+        text,
+        done: false,
+        keyPoints: []
+      }));
+    setChecklist(prev => [...prev, ...newTasks]);
   };
 
   const handleLike = (id: string) => {
@@ -176,6 +271,28 @@ Business Analyst (BA): Translates business needs into technical requirements for
   };
 
   // --- Views ---
+
+  const exportToICS = () => {
+    if (!schedule) return;
+    const icsContent = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//PlacementPro AI//Learning Schedule//EN
+BEGIN:VEVENT
+UID:${Date.now()}@placementpro.ai
+DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').split('.')[0]}Z
+DTSTART:${new Date().toISOString().replace(/[-:]/g, '').split('.')[0]}Z
+SUMMARY:Learning Schedule: ${selectedDomains.join(", ")}
+DESCRIPTION:${schedule.replace(/\n/g, '\\n')}
+END:VEVENT
+END:VCALENDAR`;
+    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = window.URL.createObjectURL(blob);
+    link.setAttribute('download', 'learning-schedule.ics');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const LoginView = () => (
     <div className="min-h-screen flex items-center justify-center bg-zinc-50 p-4">
@@ -239,7 +356,7 @@ Business Analyst (BA): Translates business needs into technical requirements for
           </button>
           <p className="text-sm text-zinc-500">
             Don't have an account? {' '}
-            <button onClick={() => setCurrentPage('signup')} className="text-blue-600 font-semibold">Sign Up</button>
+            <button onClick={() => { resetAppState(); setCurrentPage('signup'); }} className="text-blue-600 font-semibold">Sign Up</button>
           </p>
         </div>
       </motion.div>
@@ -273,6 +390,15 @@ Business Analyst (BA): Translates business needs into technical requirements for
             <input 
               type="email" 
               placeholder="Email Address" 
+              className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-blue-500 outline-none"
+              required
+            />
+          </div>
+          <div className="relative">
+            <Phone className="absolute left-3 top-3.5 h-5 w-5 text-zinc-400" />
+            <input 
+              type="tel" 
+              placeholder="Phone Number" 
               className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-blue-500 outline-none"
               required
             />
@@ -334,7 +460,7 @@ Business Analyst (BA): Translates business needs into technical requirements for
       ) : (
         <div className="max-w-4xl w-full space-y-8">
           <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-bold text-zinc-900">Select your interested domain</h1>
+            <h1 className="text-3xl font-bold text-zinc-900">Select your interested domains</h1>
             {userType === 'beginner' && (
               <button 
                 onClick={() => setShowReadMore(true)}
@@ -350,9 +476,9 @@ Business Analyst (BA): Translates business needs into technical requirements for
             {domains.map(domain => (
               <button 
                 key={domain}
-                onClick={() => handleDomainSelect(domain)}
+                onClick={() => handleDomainToggle(domain)}
                 className={`p-4 rounded-2xl border transition-all text-sm font-medium ${
-                  selectedDomain === domain 
+                  selectedDomains.includes(domain)
                   ? 'bg-blue-600 text-white border-blue-600 shadow-lg' 
                   : 'bg-white text-zinc-700 border-zinc-200 hover:border-blue-300'
                 }`}
@@ -362,13 +488,14 @@ Business Analyst (BA): Translates business needs into technical requirements for
             ))}
           </div>
 
-          {userType === 'beginner' && selectedDomain && (
+          {selectedDomains.length > 0 && (
             <div className="flex justify-center mt-8">
               <button 
-                onClick={() => setCurrentPage('dashboard')}
-                className="bg-blue-600 text-white px-12 py-3 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition-all"
+                onClick={handleOnboardingNext}
+                disabled={loading}
+                className="bg-blue-600 text-white px-12 py-3 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition-all disabled:opacity-50"
               >
-                OK
+                {loading ? 'Preparing...' : 'OK'}
               </button>
             </div>
           )}
@@ -406,15 +533,15 @@ Business Analyst (BA): Translates business needs into technical requirements for
   );
 
   const DashboardView = () => {
-    const [checklist, setChecklist] = useState<{id: number, text: string, done: boolean}[]>([]);
     const [newTodo, setNewTodo] = useState('');
+    const [newKeyPoints, setNewKeyPoints] = useState('');
     const [address, setAddress] = useState('');
     const [showProjectModal, setShowProjectModal] = useState(false);
     const [newProject, setNewProject] = useState({ name: '', description: '', githubUrl: '' });
 
     const tabs = userType === 'beginner' 
-      ? ['roadmap', 'schedule', 'checklist', 'courses', 'openings', 'linkedin', 'communication', 'quiz', 'community']
-      : ['linkedin', 'communication', 'quiz', 'community'];
+      ? ['roadmap', 'schedule', 'checklist', 'courses', 'openings', 'linkedin', 'contribution', 'quiz', 'community']
+      : ['linkedin', 'contribution', 'quiz', 'community'];
 
     const renderTabContent = () => {
       if (loading) return (
@@ -431,7 +558,7 @@ Business Analyst (BA): Translates business needs into technical requirements for
               <div className="flex items-center justify-between bg-white p-6 rounded-3xl shadow-sm border border-zinc-100">
                 <div>
                   <h2 className="text-2xl font-bold">8-Week Learning Roadmap</h2>
-                  <p className="text-zinc-500">Personalized path for {selectedDomain}</p>
+                  <p className="text-zinc-500">Personalized path for {selectedDomains.join(", ")}</p>
                 </div>
                 <button 
                   onClick={fetchRoadmap}
@@ -453,14 +580,25 @@ Business Analyst (BA): Translates business needs into technical requirements for
               <div className="flex items-center justify-between bg-white p-6 rounded-3xl shadow-sm border border-zinc-100">
                 <div>
                   <h2 className="text-2xl font-bold">8-Week Study Schedule</h2>
-                  <p className="text-zinc-500">Daily routine for {selectedDomain}</p>
+                  <p className="text-zinc-500">Daily routine for {selectedDomains.join(", ")}</p>
                 </div>
-                <button 
-                  onClick={fetchSchedule}
-                  className="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold hover:bg-blue-700 transition-all"
-                >
-                  Generate Schedule
-                </button>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={fetchScheduleFromRoadmap}
+                    className="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold hover:bg-blue-700 transition-all"
+                  >
+                    Generate Schedule
+                  </button>
+                  {schedule && (
+                    <button 
+                      onClick={exportToICS}
+                      className="bg-zinc-100 text-zinc-700 px-6 py-2 rounded-xl font-bold hover:bg-zinc-200 transition-all flex items-center gap-2"
+                    >
+                      <Calendar className="h-5 w-5" />
+                      Export to Calendar
+                    </button>
+                  )}
+                </div>
               </div>
               {schedule && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-white p-8 rounded-3xl shadow-sm border border-zinc-100 prose prose-blue max-w-none">
@@ -471,41 +609,86 @@ Business Analyst (BA): Translates business needs into technical requirements for
           );
         case 'checklist':
           return (
-            <div className="max-w-2xl mx-auto space-y-6">
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-zinc-100">
-                <h2 className="text-2xl font-bold mb-4">Your Learning Checklist</h2>
-                <div className="flex gap-2">
-                  <input 
-                    type="text" 
-                    value={newTodo}
-                    onChange={(e) => setNewTodo(e.target.value)}
-                    placeholder="Add a new task..."
-                    className="flex-1 px-4 py-2 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <button 
-                    onClick={() => {
-                      if (!newTodo) return;
-                      setChecklist([...checklist, { id: Date.now(), text: newTodo, done: false }]);
-                      setNewTodo('');
-                    }}
-                    className="bg-blue-600 text-white p-2 rounded-xl"
-                  >
-                    <Plus className="h-6 w-6" />
-                  </button>
-                </div>
-              </div>
-              <div className="space-y-2">
-                {checklist.map(item => (
-                  <div key={item.id} className="flex items-center gap-3 bg-white p-4 rounded-2xl border border-zinc-100 shadow-sm">
-                    <button 
-                      onClick={() => setChecklist(checklist.map(i => i.id === item.id ? { ...i, done: !i.done } : i))}
-                      className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${item.done ? 'bg-blue-600 border-blue-600' : 'border-zinc-300'}`}
-                    >
-                      {item.done && <CheckSquare className="h-4 w-4 text-white" />}
-                    </button>
-                    <span className={`flex-1 ${item.done ? 'line-through text-zinc-400' : 'text-zinc-700'}`}>{item.text}</span>
+            <div className="max-w-4xl mx-auto space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="md:col-span-2 space-y-6">
+                  <div className="bg-white p-6 rounded-3xl shadow-sm border border-zinc-100">
+                    <h2 className="text-2xl font-bold mb-4">Your Learning Checklist</h2>
+                    <div className="space-y-3">
+                      <input 
+                        type="text" 
+                        value={newTodo}
+                        onChange={(e) => setNewTodo(e.target.value)}
+                        placeholder="Task name..."
+                        className="w-full px-4 py-2 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <div className="flex gap-2">
+                        <input 
+                          type="text" 
+                          value={newKeyPoints}
+                          onChange={(e) => setNewKeyPoints(e.target.value)}
+                          placeholder="Key points (comma separated)..."
+                          className="flex-1 px-4 py-2 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <button 
+                          onClick={() => {
+                            if (!newTodo) return;
+                            const points = newKeyPoints.split(',').map(p => p.trim()).filter(p => p);
+                            setChecklist([...checklist, { id: Date.now(), text: newTodo, done: false, keyPoints: points }]);
+                            setNewTodo('');
+                            setNewKeyPoints('');
+                          }}
+                          className="bg-blue-600 text-white p-2 rounded-xl"
+                        >
+                          <Plus className="h-6 w-6" />
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                ))}
+                  <div className="space-y-3">
+                    {checklist.map(item => (
+                      <div key={item.id} className="bg-white p-4 rounded-2xl border border-zinc-100 shadow-sm space-y-3">
+                        <div className="flex items-center gap-3">
+                          <button 
+                            onClick={() => setChecklist(checklist.map(i => i.id === item.id ? { ...i, done: !i.done } : i))}
+                            className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${item.done ? 'bg-blue-600 border-blue-600' : 'border-zinc-300'}`}
+                          >
+                            {item.done && <CheckSquare className="h-4 w-4 text-white" />}
+                          </button>
+                          <span className={`flex-1 font-bold ${item.done ? 'line-through text-zinc-400' : 'text-zinc-700'}`}>{item.text}</span>
+                        </div>
+                        {item.keyPoints.length > 0 && (
+                          <div className="pl-9 space-y-1">
+                            {item.keyPoints.map((point, idx) => (
+                              <div key={idx} className="flex items-center gap-2 text-sm text-zinc-500">
+                                <div className="w-1.5 h-1.5 bg-blue-400 rounded-full" />
+                                {point}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-6">
+                  <div className="bg-white p-6 rounded-3xl shadow-sm border border-zinc-100">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-bold">Key Concepts</h3>
+                      <div className="flex gap-2">
+                        <button onClick={addConceptsToChecklist} className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-md font-bold hover:bg-blue-100 transition-colors">Add to Checklist</button>
+                        <button onClick={fetchKeyConcepts} className="text-xs text-blue-600 font-bold hover:underline">Refresh</button>
+                      </div>
+                    </div>
+                    {keyConcepts ? (
+                      <div className="prose prose-sm prose-blue">
+                        <Markdown>{keyConcepts}</Markdown>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-zinc-400 italic">Generate roadmap first to see key concepts here.</p>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           );
@@ -562,17 +745,117 @@ Business Analyst (BA): Translates business needs into technical requirements for
         case 'linkedin':
           return (
             <div className="space-y-6">
-              <div className="flex items-center justify-between bg-white p-6 rounded-3xl shadow-sm border border-zinc-100">
-                <div>
-                  <h2 className="text-2xl font-bold">LinkedIn Portfolio Builder</h2>
-                  <p className="text-zinc-500">AI-optimized profile content</p>
+              <div className="bg-white p-8 rounded-3xl shadow-sm border border-zinc-100">
+                <h2 className="text-2xl font-bold mb-6">LinkedIn Profile Details</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-bold text-zinc-700 mb-1">Full Name *</label>
+                      <input 
+                        value={userProfile.fullName}
+                        onChange={e => setUserProfile({...userProfile, fullName: e.target.value})}
+                        className="w-full px-4 py-2 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="John Doe"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-zinc-700 mb-1">Professional Headline</label>
+                      <input 
+                        value={userProfile.headline}
+                        onChange={e => setUserProfile({...userProfile, headline: e.target.value})}
+                        className="w-full px-4 py-2 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Full Stack Developer | MERN | Open Source Contributor"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-bold text-zinc-700 mb-1">Email</label>
+                        <input 
+                          value={userProfile.email}
+                          onChange={e => setUserProfile({...userProfile, email: e.target.value})}
+                          className="w-full px-4 py-2 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="john@example.com"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold text-zinc-700 mb-1">Phone</label>
+                        <input 
+                          value={userProfile.phone}
+                          onChange={e => setUserProfile({...userProfile, phone: e.target.value})}
+                          className="w-full px-4 py-2 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="+1 234 567 890"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-zinc-700 mb-1">Location</label>
+                      <input 
+                        value={userProfile.location}
+                        onChange={e => setUserProfile({...userProfile, location: e.target.value})}
+                        className="w-full px-4 py-2 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="City, Country"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-bold text-zinc-700 mb-1">Portfolio Website</label>
+                      <input 
+                        value={userProfile.portfolio}
+                        onChange={e => setUserProfile({...userProfile, portfolio: e.target.value})}
+                        className="w-full px-4 py-2 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="https://johndoe.dev"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-zinc-700 mb-1">GitHub URL</label>
+                      <input 
+                        value={userProfile.github}
+                        onChange={e => setUserProfile({...userProfile, github: e.target.value})}
+                        className="w-full px-4 py-2 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="https://github.com/..."
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-zinc-700 mb-1">LinkedIn URL</label>
+                      <input 
+                        value={userProfile.linkedinUrl}
+                        onChange={e => setUserProfile({...userProfile, linkedinUrl: e.target.value})}
+                        className="w-full px-4 py-2 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="https://linkedin.com/in/..."
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-zinc-700 mb-1">Profile Photo</label>
+                      <div className="flex items-center gap-4">
+                        {userProfile.photo && (
+                          <img src={userProfile.photo} alt="Preview" className="w-12 h-12 rounded-full object-cover border border-zinc-200" />
+                        )}
+                        <input 
+                          type="file"
+                          onChange={e => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onloadend = () => setUserProfile({...userProfile, photo: reader.result as string});
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                          className="flex-1 text-sm text-zinc-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <button 
-                  onClick={fetchLinkedin}
-                  className="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold hover:bg-blue-700 transition-all"
-                >
-                  Generate Profile
-                </button>
+                <div className="mt-8 flex gap-4">
+                  <button 
+                    onClick={fetchLinkedin}
+                    disabled={!userProfile.fullName}
+                    className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition-all disabled:opacity-50"
+                  >
+                    Generate AI Optimized Summary
+                  </button>
+                </div>
               </div>
               {linkedin && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-white p-8 rounded-3xl shadow-sm border border-zinc-100 prose prose-blue max-w-none">
@@ -581,11 +864,11 @@ Business Analyst (BA): Translates business needs into technical requirements for
               )}
             </div>
           );
-        case 'communication':
+        case 'contribution':
           return (
             <div className="space-y-6">
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-zinc-100">
-                <h2 className="text-2xl font-bold">Communication & Collaboration</h2>
+                <h2 className="text-2xl font-bold">Contribution & Collaboration</h2>
                 {userType === 'beginner' ? (
                   <div className="mt-4 space-y-4">
                     <p className="text-zinc-600">Create your contributor profile by adding your interests.</p>
@@ -610,11 +893,29 @@ Business Analyst (BA): Translates business needs into technical requirements for
         case 'quiz':
           return (
             <div className="space-y-6">
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-zinc-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-bold">Skill Assessment</h2>
+                  <p className="text-zinc-500">Test your knowledge and earn credits</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="text-sm font-bold text-zinc-600">Language:</label>
+                  <select 
+                    value={quizLanguage}
+                    onChange={(e) => setQuizLanguage(e.target.value)}
+                    className="px-4 py-2 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {['JavaScript', 'Python', 'Java', 'C++', 'TypeScript', 'Go', 'Rust'].map(lang => (
+                      <option key={lang} value={lang}>{lang}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {['Basic Coding', 'DSA', 'Problem Solving'].map(cat => (
                   <button 
                     key={cat}
-                    onClick={() => fetchQuiz(cat, 'JavaScript', 'Intermediate')}
+                    onClick={() => fetchQuiz(cat, 'Intermediate')}
                     className="p-4 bg-white rounded-2xl border border-zinc-200 hover:border-blue-500 transition-all text-center font-bold"
                   >
                     {cat}
@@ -647,15 +948,13 @@ Business Analyst (BA): Translates business needs into technical requirements for
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <h2 className="text-3xl font-bold">Community Projects</h2>
-                {userType === 'veteran' && (
-                  <button 
-                    onClick={() => setShowProjectModal(true)}
-                    className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-xl font-bold shadow-lg"
-                  >
-                    <Plus className="h-5 w-5" />
-                    Create Project
-                  </button>
-                )}
+                <button 
+                  onClick={() => setShowProjectModal(true)}
+                  className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-xl font-bold shadow-lg"
+                >
+                  <Plus className="h-5 w-5" />
+                  Create Project
+                </button>
               </div>
 
               {projects.length === 0 ? (
@@ -665,14 +964,12 @@ Business Analyst (BA): Translates business needs into technical requirements for
                   </div>
                   <h3 className="text-2xl font-bold text-zinc-900">Create your own project now</h3>
                   <p className="text-zinc-500 mt-2 mb-8">Be the first to share your work with the community!</p>
-                  {userType === 'veteran' && (
-                    <button 
-                      onClick={() => setShowProjectModal(true)}
-                      className="bg-blue-600 text-white px-12 py-3 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition-all"
-                    >
-                      Create a project
-                    </button>
-                  )}
+                  <button 
+                    onClick={() => setShowProjectModal(true)}
+                    className="bg-blue-600 text-white px-12 py-3 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition-all"
+                  >
+                    Create a project
+                  </button>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -817,7 +1114,7 @@ Business Analyst (BA): Translates business needs into technical requirements for
                 {tab === 'courses' && <BookOpen className="h-5 w-5" />}
                 {tab === 'openings' && <Briefcase className="h-5 w-5" />}
                 {tab === 'linkedin' && <Linkedin className="h-5 w-5" />}
-                {tab === 'communication' && <MessageSquare className="h-5 w-5" />}
+                {tab === 'contribution' && <MessageSquare className="h-5 w-5" />}
                 {tab === 'quiz' && <Trophy className="h-5 w-5" />}
                 {tab === 'community' && <Users className="h-5 w-5" />}
                 <span className="capitalize">{tab}</span>
@@ -827,7 +1124,7 @@ Business Analyst (BA): Translates business needs into technical requirements for
 
           <div className="p-4 border-t border-zinc-100">
             <button 
-              onClick={() => setCurrentPage('login')}
+              onClick={() => { resetAppState(); setCurrentPage('login'); }}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-red-500 hover:bg-red-50 transition-all"
             >
               <LogOut className="h-5 w-5" />
@@ -840,8 +1137,8 @@ Business Analyst (BA): Translates business needs into technical requirements for
         <div className="flex-1 flex flex-col">
           <header className="h-16 bg-white border-b border-zinc-200 flex items-center justify-between px-8">
             <div className="flex items-center gap-2">
-              <span className="text-zinc-400">Domain:</span>
-              <span className="font-bold text-zinc-900">{selectedDomain}</span>
+              <span className="text-zinc-400">Domains:</span>
+              <span className="font-bold text-zinc-900">{selectedDomains.join(", ")}</span>
             </div>
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2 bg-blue-50 px-4 py-1.5 rounded-full">
