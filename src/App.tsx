@@ -25,7 +25,9 @@ import {
   Heart,
   Info,
   LogOut,
-  Send
+  Send,
+  Bot,
+  X
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { 
@@ -37,7 +39,8 @@ import {
   generateQuizQuestion,
   compareCredits,
   generateDomainTopics,
-  generateKeyConcepts
+  generateKeyConcepts,
+  chatWithAI
 } from './services/gemini';
 
 // --- Types ---
@@ -1156,12 +1159,132 @@ END:VCALENDAR`;
     );
   };
 
+  const ChatBot = () => {
+    const [messages, setMessages] = useState<{role: 'user' | 'model', text: string}[]>([]);
+    const [input, setInput] = useState('');
+    const [isChatOpen, setIsChatOpen] = useState(false);
+    const [width, setWidth] = useState(window.innerWidth / 4);
+    const [isResizing, setIsResizing] = useState(false);
+
+    const handleSend = async () => {
+      if (!input.trim()) return;
+      const userMsg = { role: 'user' as const, text: input };
+      setMessages(prev => [...prev, userMsg]);
+      setInput('');
+      
+      try {
+        const text = await chatWithAI([...messages, userMsg]);
+        setMessages(prev => [...prev, { role: 'model', text: text || '' }]);
+      } catch (error) {
+        console.error("Chat error:", error);
+      }
+    };
+
+    useEffect(() => {
+      const handleMouseMove = (e: MouseEvent) => {
+        if (!isResizing) return;
+        setWidth(Math.max(300, Math.min(window.innerWidth - e.clientX, window.innerWidth * 0.8)));
+      };
+      const handleMouseUp = () => setIsResizing(false);
+      
+      if (isResizing) {
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+      }
+      return () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+      };
+    }, [isResizing]);
+
+    return (
+      <>
+        {/* Chat Toggle Button */}
+        <motion.button 
+          onClick={() => setIsChatOpen(!isChatOpen)}
+          animate={{ x: isChatOpen ? -width : 0 }}
+          className="fixed right-0 top-1/2 -translate-y-1/2 z-[80] bg-blue-600 text-white p-3 rounded-l-2xl shadow-xl hover:bg-blue-700 transition-all"
+        >
+          {isChatOpen ? <X className="h-6 w-6" /> : <Bot className="h-6 w-6" />}
+        </motion.button>
+
+        {/* Chat Window */}
+        <AnimatePresence>
+          {isChatOpen && (
+            <motion.div 
+              initial={{ x: width }}
+              animate={{ x: 0 }}
+              exit={{ x: width }}
+              style={{ width }}
+              className="fixed right-0 top-0 h-screen bg-white border-l border-zinc-200 shadow-2xl z-[70] flex flex-col"
+            >
+              {/* Resize Handle */}
+              <div 
+                onMouseDown={() => setIsResizing(true)}
+                className="absolute left-0 top-0 w-1 h-full cursor-col-resize hover:bg-blue-400 transition-colors"
+              />
+
+              <div className="p-4 border-b border-zinc-100 flex items-center justify-between bg-blue-600 text-white">
+                <div className="flex items-center gap-2">
+                  <Bot className="h-5 w-5" />
+                  <span className="font-bold">AI Career Assistant</span>
+                </div>
+                <button onClick={() => setIsChatOpen(false)}>
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {messages.length === 0 && (
+                  <div className="text-center py-10 text-zinc-400">
+                    <Bot className="h-12 w-12 mx-auto mb-4 opacity-20" />
+                    <p>How can I help you today?</p>
+                  </div>
+                )}
+                {messages.map((m, i) => (
+                  <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[85%] p-3 rounded-2xl text-sm ${
+                      m.role === 'user' 
+                      ? 'bg-blue-600 text-white rounded-tr-none' 
+                      : 'bg-zinc-100 text-zinc-800 rounded-tl-none'
+                    }`}>
+                      <Markdown>{m.text}</Markdown>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="p-4 border-t border-zinc-100">
+                <div className="flex gap-2">
+                  <input 
+                    value={input}
+                    onChange={e => setInput(e.target.value)}
+                    onKeyPress={e => e.key === 'Enter' && handleSend()}
+                    placeholder="Ask anything..."
+                    className="flex-1 px-4 py-2 rounded-xl border border-zinc-200 outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                  <button 
+                    onClick={handleSend}
+                    className="bg-blue-600 text-white p-2 rounded-xl"
+                  >
+                    <Send className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </>
+    );
+  };
+
   return (
     <div className="font-sans text-zinc-900 antialiased">
       {currentPage === 'login' && <LoginView />}
       {currentPage === 'signup' && <SignupView />}
       {currentPage === 'onboarding' && <OnboardingView />}
       {currentPage === 'dashboard' && <DashboardView />}
+      {(currentPage === 'onboarding' || currentPage === 'dashboard') && <ChatBot />}
     </div>
   );
 }

@@ -120,3 +120,17 @@ export async function compareCredits(projectCredits: number, contributionCredits
   });
   return response.text;
 }
+
+export async function chatWithAI(messages: {role: 'user' | 'model', text: string}[]) {
+  const response = await ai.models.generateContent({
+    model: geminiModel,
+    contents: messages.map(m => ({
+      role: m.role,
+      parts: [{ text: m.text }]
+    })),
+    config: {
+      systemInstruction: "You are a helpful career assistant for PlacementPro AI. Help users with career advice, learning paths, and platform features."
+    }
+  });
+  return response.text;
+}
