@@ -30,19 +30,19 @@ import {
   X
 } from 'lucide-react';
 import Markdown from 'react-markdown';
-import { 
-  generateRoadmap, 
-  generateSchedule, 
-  generateCourses, 
-  generateJobOpenings, 
-  generateLinkedInPortfolio, 
+import {
+  generateRoadmap,
+  generateSchedule,
+  generateCourses,
+  generateJobOpenings,
+  generateLinkedInPortfolio,
   generateQuizQuestion,
   compareCredits,
   generateDomainTopics,
   generateKeyConcepts,
   chatWithAI
 } from './services/gemini';
-import { auth, db, storage } from './firebase';
+import { auth, db, storage, saveUser, getUserByEmail, saveChatMessage, getChatHistory } from './firebase';
 
 // --- Types ---
 
@@ -70,6 +70,8 @@ export default function App() {
   const [credits, setCredits] = useState(0);
   const [projects, setProjects] = useState<Project[]>([]);
   const [likedProjects, setLikedProjects] = useState<Set<string>>(new Set());
+  const [userId, setUserId] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string>('');
   const [userProfile, setUserProfile] = useState({
     fullName: '',
     headline: '',
@@ -144,6 +146,8 @@ Business Analyst (BA): Translates business needs into technical requirements for
     setQuiz(null);
     setCredits(0);
     setChecklist([]);
+    setUserId(null);
+    setUserEmail('');
     setUserProfile({
       fullName: '',
       headline: '',
@@ -157,15 +161,63 @@ Business Analyst (BA): Translates business needs into technical requirements for
     });
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const email = formData.get('email') as string;
+    const password = formData.get('password') as string;
+
+    if (!email || !password) {
+      alert('Please enter email and password');
+      return;
+    }
+
+    const user = await getUserByEmail(email);
+    if (!user) {
+      alert('User not found. Please signup first.');
+      return;
+    }
+
+    if (user.password !== password) {
+      alert('Invalid password');
+      return;
+    }
+
+    setUserId(user.uid);
+    setUserEmail(email);
     setCurrentPage('dashboard');
   };
 
-  const handleSignup = (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    resetAppState();
-    setCurrentPage('onboarding');
+    const formData = new FormData(e.currentTarget);
+    const fullName = formData.get('fullName') as string;
+    const email = formData.get('email') as string;
+    const phone = formData.get('phone') as string;
+    const password = formData.get('password') as string;
+
+    if (!fullName || !email || !password) {
+      alert('Please fill all required fields');
+      return;
+    }
+
+    // Check if user already exists
+    const existingUser = await getUserByEmail(email);
+    if (existingUser) {
+      alert('User already exists. Please login.');
+      return;
+    }
+
+    // Save user to Firebase
+    const result = await saveUser(email, password, fullName);
+    if (result.success) {
+      setUserId(result.uid);
+      setUserEmail(email);
+      resetAppState();
+      setCurrentPage('onboarding');
+    } else {
+      alert('Signup failed: ' + result.error);
+    }
   };
 
   const handleDomainToggle = (domain: string) => {
@@ -324,9 +376,10 @@ END:VCALENDAR`;
           ) : (
             <div className="relative">
               <Mail className="absolute left-3 top-3.5 h-5 w-5 text-zinc-400" />
-              <input 
-                type="email" 
-                placeholder="Email Address" 
+              <input
+                type="email"
+                name="email"
+                placeholder="Email Address"
                 className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
                 required
               />
@@ -335,9 +388,10 @@ END:VCALENDAR`;
 
           <div className="relative">
             <Lock className="absolute left-3 top-3.5 h-5 w-5 text-zinc-400" />
-            <input 
-              type="password" 
-              placeholder="Password" 
+            <input
+              type="password"
+              name="password"
+              placeholder="Password"
               className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
               required
             />
@@ -382,36 +436,40 @@ END:VCALENDAR`;
         <form onSubmit={handleSignup} className="space-y-4">
           <div className="relative">
             <User className="absolute left-3 top-3.5 h-5 w-5 text-zinc-400" />
-            <input 
-              type="text" 
-              placeholder="Full Name" 
+            <input
+              type="text"
+              name="fullName"
+              placeholder="Full Name"
               className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-blue-500 outline-none"
               required
             />
           </div>
           <div className="relative">
             <Mail className="absolute left-3 top-3.5 h-5 w-5 text-zinc-400" />
-            <input 
-              type="email" 
-              placeholder="Email Address" 
+            <input
+              type="email"
+              name="email"
+              placeholder="Email Address"
               className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-blue-500 outline-none"
               required
             />
           </div>
           <div className="relative">
             <Phone className="absolute left-3 top-3.5 h-5 w-5 text-zinc-400" />
-            <input 
-              type="tel" 
-              placeholder="Phone Number" 
+            <input
+              type="tel"
+              name="phone"
+              placeholder="Phone Number"
               className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-blue-500 outline-none"
               required
             />
           </div>
           <div className="relative">
             <Lock className="absolute left-3 top-3.5 h-5 w-5 text-zinc-400" />
-            <input 
-              type="password" 
-              placeholder="Password" 
+            <input
+              type="password"
+              name="password"
+              placeholder="Password"
               className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-blue-500 outline-none"
               required
             />
@@ -1168,18 +1226,40 @@ END:VCALENDAR`;
     const [isResizing, setIsResizing] = useState(false);
 
     const handleSend = async () => {
-      if (!input.trim()) return;
+      if (!input.trim() || !userId) return;
       const userMsg = { role: 'user' as const, text: input };
       setMessages(prev => [...prev, userMsg]);
       setInput('');
-      
+
+      // Save user message to Firebase
+      await saveChatMessage(userId, userMsg);
+
       try {
         const text = await chatWithAI([...messages, userMsg]);
-        setMessages(prev => [...prev, { role: 'model', text: text || '' }]);
+        const aiMsg = { role: 'model' as const, text: text || '' };
+        setMessages(prev => [...prev, aiMsg]);
+
+        // Save AI message to Firebase
+        await saveChatMessage(userId, aiMsg);
       } catch (error) {
         console.error("Chat error:", error);
       }
     };
+
+    useEffect(() => {
+      // Load chat history from Firebase when component mounts or userId changes
+      const loadChatHistory = async () => {
+        if (userId) {
+          const history = await getChatHistory(userId);
+          const formattedHistory = history.map(msg => ({
+            role: msg.role as 'user' | 'model',
+            text: msg.text
+          }));
+          setMessages(formattedHistory);
+        }
+      };
+      loadChatHistory();
+    }, [userId]);
 
     useEffect(() => {
       const handleMouseMove = (e: MouseEvent) => {
@@ -1187,7 +1267,7 @@ END:VCALENDAR`;
         setWidth(Math.max(300, Math.min(window.innerWidth - e.clientX, window.innerWidth * 0.8)));
       };
       const handleMouseUp = () => setIsResizing(false);
-      
+
       if (isResizing) {
         window.addEventListener('mousemove', handleMouseMove);
         window.addEventListener('mouseup', handleMouseUp);
