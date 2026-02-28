@@ -42,6 +42,7 @@ import {
   generateKeyConcepts,
   chatWithAI
 } from './services/gemini';
+import { auth, db, storage } from './firebase';
 
 // --- Types ---
 
