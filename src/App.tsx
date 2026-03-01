@@ -30,19 +30,34 @@ import {
   X
 } from 'lucide-react';
 import Markdown from 'react-markdown';
-import {
-  generateRoadmap,
-  generateSchedule,
-  generateCourses,
-  generateJobOpenings,
-  generateLinkedInPortfolio,
+import { 
+  generateRoadmap, 
+  generateSchedule, 
+  generateCourses, 
+  generateJobOpenings, 
+  generateLinkedInPortfolio, 
   generateQuizQuestion,
   compareCredits,
   generateDomainTopics,
   generateKeyConcepts,
   chatWithAI
 } from './services/gemini';
-import { auth, db, storage, saveUser, getUserByEmail, saveChatMessage, getChatHistory } from './firebase';
+import { auth, db, storage } from './services/firebase';
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  onAuthStateChanged,
+  signOut
+} from 'firebase/auth';
+import { 
+  collection, 
+  addDoc, 
+  onSnapshot, 
+  query, 
+  orderBy, 
+  serverTimestamp,
+  where
+} from 'firebase/firestore';
 
 // --- Types ---
 
@@ -70,8 +85,6 @@ export default function App() {
   const [credits, setCredits] = useState(0);
   const [projects, setProjects] = useState<Project[]>([]);
   const [likedProjects, setLikedProjects] = useState<Set<string>>(new Set());
-  const [userId, setUserId] = useState<string | null>(null);
-  const [userEmail, setUserEmail] = useState<string>('');
   const [userProfile, setUserProfile] = useState({
     fullName: '',
     headline: '',
@@ -96,6 +109,21 @@ export default function App() {
   const [quizLanguage, setQuizLanguage] = useState('JavaScript');
   const [loading, setLoading] = useState(false);
   const [checklist, setChecklist] = useState<{id: number, text: string, done: boolean, keyPoints: string[]}[]>([]);
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        if (currentPage === 'login' || currentPage === 'signup') {
+          setCurrentPage('dashboard');
+        }
+      } else {
+        setCurrentPage('login');
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   const domains = [
     "Web Development", "Cyber Security", "Block Chain", "IOT", 
@@ -146,8 +174,6 @@ Business Analyst (BA): Translates business needs into technical requirements for
     setQuiz(null);
     setCredits(0);
     setChecklist([]);
-    setUserId(null);
-    setUserEmail('');
     setUserProfile({
       fullName: '',
       headline: '',
@@ -161,62 +187,48 @@ Business Analyst (BA): Translates business needs into technical requirements for
     });
   };
 
-  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const formData = new FormData(e.currentTarget);
+    const formData = new FormData(e.currentTarget as HTMLFormElement);
     const email = formData.get('email') as string;
     const password = formData.get('password') as string;
-
-    if (!email || !password) {
-      alert('Please enter email and password');
-      return;
+    
+    setLoading(true);
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error: any) {
+      alert(error.message);
+    } finally {
+      setLoading(false);
     }
-
-    const user = await getUserByEmail(email);
-    if (!user) {
-      alert('User not found. Please signup first.');
-      return;
-    }
-
-    if (user.password !== password) {
-      alert('Invalid password');
-      return;
-    }
-
-    setUserId(user.uid);
-    setUserEmail(email);
-    setCurrentPage('dashboard');
   };
 
-  const handleSignup = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const fullName = formData.get('fullName') as string;
+    const formData = new FormData(e.currentTarget as HTMLFormElement);
     const email = formData.get('email') as string;
-    const phone = formData.get('phone') as string;
     const password = formData.get('password') as string;
+    const fullName = formData.get('fullName') as string;
 
-    if (!fullName || !email || !password) {
-      alert('Please fill all required fields');
-      return;
-    }
-
-    // Check if user already exists
-    const existingUser = await getUserByEmail(email);
-    if (existingUser) {
-      alert('User already exists. Please login.');
-      return;
-    }
-
-    // Save user to Firebase
-    const result = await saveUser(email, password, fullName);
-    if (result.success) {
-      setUserId(result.uid);
-      setUserEmail(email);
+    setLoading(true);
+    try {
+      await createUserWithEmailAndPassword(auth, email, password);
       resetAppState();
+      setUserProfile(prev => ({ ...prev, fullName, email }));
       setCurrentPage('onboarding');
-    } else {
-      alert('Signup failed: ' + result.error);
+    } catch (error: any) {
+      alert(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      resetAppState();
+    } catch (error: any) {
+      console.error("Logout error:", error);
     }
   };
 
@@ -367,6 +379,7 @@ END:VCALENDAR`;
             <div className="relative">
               <Phone className="absolute left-3 top-3.5 h-5 w-5 text-zinc-400" />
               <input 
+                name="phone"
                 type="tel" 
                 placeholder="Phone Number" 
                 className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
@@ -376,10 +389,10 @@ END:VCALENDAR`;
           ) : (
             <div className="relative">
               <Mail className="absolute left-3 top-3.5 h-5 w-5 text-zinc-400" />
-              <input
-                type="email"
+              <input 
                 name="email"
-                placeholder="Email Address"
+                type="email" 
+                placeholder="Email Address" 
                 className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
                 required
               />
@@ -388,10 +401,10 @@ END:VCALENDAR`;
 
           <div className="relative">
             <Lock className="absolute left-3 top-3.5 h-5 w-5 text-zinc-400" />
-            <input
-              type="password"
+            <input 
               name="password"
-              placeholder="Password"
+              type="password" 
+              placeholder="Password" 
               className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
               required
             />
@@ -399,9 +412,10 @@ END:VCALENDAR`;
 
           <button 
             type="submit"
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors shadow-lg shadow-blue-200"
+            disabled={loading}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors shadow-lg shadow-blue-200 disabled:opacity-50"
           >
-            Sign In
+            {loading ? 'Signing In...' : 'Sign In'}
           </button>
         </form>
 
@@ -436,40 +450,40 @@ END:VCALENDAR`;
         <form onSubmit={handleSignup} className="space-y-4">
           <div className="relative">
             <User className="absolute left-3 top-3.5 h-5 w-5 text-zinc-400" />
-            <input
-              type="text"
+            <input 
               name="fullName"
-              placeholder="Full Name"
+              type="text" 
+              placeholder="Full Name" 
               className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-blue-500 outline-none"
               required
             />
           </div>
           <div className="relative">
             <Mail className="absolute left-3 top-3.5 h-5 w-5 text-zinc-400" />
-            <input
-              type="email"
+            <input 
               name="email"
-              placeholder="Email Address"
+              type="email" 
+              placeholder="Email Address" 
               className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-blue-500 outline-none"
               required
             />
           </div>
           <div className="relative">
             <Phone className="absolute left-3 top-3.5 h-5 w-5 text-zinc-400" />
-            <input
-              type="tel"
+            <input 
               name="phone"
-              placeholder="Phone Number"
+              type="tel" 
+              placeholder="Phone Number" 
               className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-blue-500 outline-none"
               required
             />
           </div>
           <div className="relative">
             <Lock className="absolute left-3 top-3.5 h-5 w-5 text-zinc-400" />
-            <input
-              type="password"
+            <input 
               name="password"
-              placeholder="Password"
+              type="password" 
+              placeholder="Password" 
               className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-blue-500 outline-none"
               required
             />
@@ -477,9 +491,10 @@ END:VCALENDAR`;
 
           <button 
             type="submit"
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors shadow-lg shadow-blue-200"
+            disabled={loading}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors shadow-lg shadow-blue-200 disabled:opacity-50"
           >
-            Create Account
+            {loading ? 'Creating Account...' : 'Create Account'}
           </button>
         </form>
 
@@ -1186,7 +1201,7 @@ END:VCALENDAR`;
 
           <div className="p-4 border-t border-zinc-100">
             <button 
-              onClick={() => { resetAppState(); setCurrentPage('login'); }}
+              onClick={handleLogout}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-red-500 hover:bg-red-50 transition-all"
             >
               <LogOut className="h-5 w-5" />
@@ -1225,41 +1240,46 @@ END:VCALENDAR`;
     const [width, setWidth] = useState(window.innerWidth / 4);
     const [isResizing, setIsResizing] = useState(false);
 
+    useEffect(() => {
+      if (!user) return;
+      const q = query(
+        collection(db, "chats"),
+        where("userId", "==", user.uid),
+        orderBy("createdAt", "asc")
+      );
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const msgs = snapshot.docs.map(doc => ({
+          role: doc.data().role,
+          text: doc.data().text
+        }));
+        setMessages(msgs);
+      });
+      return () => unsubscribe();
+    }, [user]);
+
     const handleSend = async () => {
-      if (!input.trim() || !userId) return;
+      if (!input.trim() || !user) return;
       const userMsg = { role: 'user' as const, text: input };
-      setMessages(prev => [...prev, userMsg]);
-      setInput('');
-
-      // Save user message to Firebase
-      await saveChatMessage(userId, userMsg);
-
+      
       try {
+        await addDoc(collection(db, "chats"), {
+          ...userMsg,
+          userId: user.uid,
+          createdAt: serverTimestamp()
+        });
+        setInput('');
+        
         const text = await chatWithAI([...messages, userMsg]);
-        const aiMsg = { role: 'model' as const, text: text || '' };
-        setMessages(prev => [...prev, aiMsg]);
-
-        // Save AI message to Firebase
-        await saveChatMessage(userId, aiMsg);
+        await addDoc(collection(db, "chats"), {
+          role: 'model',
+          text: text || '',
+          userId: user.uid,
+          createdAt: serverTimestamp()
+        });
       } catch (error) {
         console.error("Chat error:", error);
       }
     };
-
-    useEffect(() => {
-      // Load chat history from Firebase when component mounts or userId changes
-      const loadChatHistory = async () => {
-        if (userId) {
-          const history = await getChatHistory(userId);
-          const formattedHistory = history.map(msg => ({
-            role: msg.role as 'user' | 'model',
-            text: msg.text
-          }));
-          setMessages(formattedHistory);
-        }
-      };
-      loadChatHistory();
-    }, [userId]);
 
     useEffect(() => {
       const handleMouseMove = (e: MouseEvent) => {
@@ -1267,7 +1287,7 @@ END:VCALENDAR`;
         setWidth(Math.max(300, Math.min(window.innerWidth - e.clientX, window.innerWidth * 0.8)));
       };
       const handleMouseUp = () => setIsResizing(false);
-
+      
       if (isResizing) {
         window.addEventListener('mousemove', handleMouseMove);
         window.addEventListener('mouseup', handleMouseUp);
