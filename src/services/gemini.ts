@@ -110,7 +110,10 @@ export async function generateQuizQuestion(domain: string, language: string, lev
       }
     }
   });
-  return JSON.parse(response.text || "{}");
+  const text = response.text || "{}";
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  const jsonStr = jsonMatch ? jsonMatch[0] : text;
+  return JSON.parse(jsonStr);
 }
 
 export async function compareCredits(projectCredits: number, contributionCredits: number, developerCredits: number) {

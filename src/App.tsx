@@ -79,7 +79,6 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('login');
   const [userType, setUserType] = useState<UserType | null>(null);
   const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
-  const [isPhoneLogin, setIsPhoneLogin] = useState(false);
   const [showReadMore, setShowReadMore] = useState(false);
   const [activeTab, setActiveTab] = useState('roadmap');
   const [credits, setCredits] = useState(0);
@@ -119,11 +118,14 @@ export default function App() {
           setCurrentPage('dashboard');
         }
       } else {
-        setCurrentPage('login');
+        // Only redirect to login if we're on a protected page
+        if (currentPage !== 'login' && currentPage !== 'signup') {
+          setCurrentPage('login');
+        }
       }
     });
     return () => unsubscribe();
-  }, []);
+  }, [currentPage]);
 
   const domains = [
     "Web Development", "Cyber Security", "Block Chain", "IOT", 
@@ -193,6 +195,11 @@ Business Analyst (BA): Translates business needs into technical requirements for
     const email = formData.get('email') as string;
     const password = formData.get('password') as string;
     
+    if (!email || !password) {
+      alert("Please enter both email and password");
+      return;
+    }
+
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
@@ -375,29 +382,16 @@ END:VCALENDAR`;
         </div>
 
         <form onSubmit={handleLogin} className="space-y-4">
-          {isPhoneLogin ? (
-            <div className="relative">
-              <Phone className="absolute left-3 top-3.5 h-5 w-5 text-zinc-400" />
-              <input 
-                name="phone"
-                type="tel" 
-                placeholder="Phone Number" 
-                className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                required
-              />
-            </div>
-          ) : (
-            <div className="relative">
-              <Mail className="absolute left-3 top-3.5 h-5 w-5 text-zinc-400" />
-              <input 
-                name="email"
-                type="email" 
-                placeholder="Email Address" 
-                className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                required
-              />
-            </div>
-          )}
+          <div className="relative">
+            <Mail className="absolute left-3 top-3.5 h-5 w-5 text-zinc-400" />
+            <input 
+              name="email"
+              type="email" 
+              placeholder="Email Address" 
+              className="w-full pl-10 pr-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+              required
+            />
+          </div>
 
           <div className="relative">
             <Lock className="absolute left-3 top-3.5 h-5 w-5 text-zinc-400" />
@@ -419,13 +413,7 @@ END:VCALENDAR`;
           </button>
         </form>
 
-        <div className="mt-6 text-center space-y-4">
-          <button 
-            onClick={() => setIsPhoneLogin(!isPhoneLogin)}
-            className="text-sm font-medium text-blue-600 hover:text-blue-700"
-          >
-            {isPhoneLogin ? 'Login with Email' : 'Login with Phone Number'}
-          </button>
+        <div className="mt-6 text-center">
           <p className="text-sm text-zinc-500">
             Don't have an account? {' '}
             <button onClick={() => { resetAppState(); setCurrentPage('signup'); }} className="text-blue-600 font-semibold">Sign Up</button>
@@ -1239,6 +1227,7 @@ END:VCALENDAR`;
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [width, setWidth] = useState(window.innerWidth / 4);
     const [isResizing, setIsResizing] = useState(false);
+    const [isTyping, setIsTyping] = useState(false);
 
     useEffect(() => {
       if (!user) return;
@@ -1258,9 +1247,10 @@ END:VCALENDAR`;
     }, [user]);
 
     const handleSend = async () => {
-      if (!input.trim() || !user) return;
+      if (!input.trim() || !user || isTyping) return;
       const userMsg = { role: 'user' as const, text: input };
       
+      setIsTyping(true);
       try {
         await addDoc(collection(db, "chats"), {
           ...userMsg,
@@ -1270,14 +1260,19 @@ END:VCALENDAR`;
         setInput('');
         
         const text = await chatWithAI([...messages, userMsg]);
-        await addDoc(collection(db, "chats"), {
-          role: 'model',
-          text: text || '',
-          userId: user.uid,
-          createdAt: serverTimestamp()
-        });
-      } catch (error) {
+        if (text) {
+          await addDoc(collection(db, "chats"), {
+            role: 'model',
+            text: text,
+            userId: user.uid,
+            createdAt: serverTimestamp()
+          });
+        }
+      } catch (error: any) {
         console.error("Chat error:", error);
+        alert("AI Bot Error: " + error.message);
+      } finally {
+        setIsTyping(false);
       }
     };
 
@@ -1353,6 +1348,13 @@ END:VCALENDAR`;
                     </div>
                   </div>
                 ))}
+                {isTyping && (
+                  <div className="flex justify-start">
+                    <div className="bg-zinc-100 text-zinc-800 p-3 rounded-2xl rounded-tl-none text-sm animate-pulse">
+                      AI is thinking...
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="p-4 border-t border-zinc-100">
