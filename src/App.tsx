@@ -260,8 +260,14 @@ Business Analyst (BA): Translates business needs into technical requirements for
       setCurrentPage('dashboard');
       // Default tab for veterans is openings
       if (userType === 'veteran') setActiveTab('openings');
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error during onboarding generation:", error);
+      const errorMsg = error.message || "";
+      if (errorMsg.includes("leaked")) {
+        alert("Your Gemini API key has been reported as leaked. Please provide a new, fresh API key in the code.");
+      } else {
+        alert("An error occurred while generating your career data. Please check your API key and try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -269,19 +275,41 @@ Business Analyst (BA): Translates business needs into technical requirements for
 
   const fetchRoadmap = async () => {
     setLoading(true);
-    const res = await generateRoadmap(selectedDomains, domainTopics, courses);
-    setRoadmap(res || '');
-    // Also fetch key concepts for the checklist
-    const concepts = await generateKeyConcepts(`Based on these courses: ${courses}, list 10 essential key concepts for ${selectedDomains.join(", ")}`);
-    setKeyConcepts(concepts || '');
-    setLoading(false);
+    try {
+      const res = await generateRoadmap(selectedDomains, domainTopics, courses);
+      setRoadmap(res || '');
+      // Also fetch key concepts for the checklist
+      const concepts = await generateKeyConcepts(`Based on these courses: ${courses}, list 10 essential key concepts for ${selectedDomains.join(", ")}`);
+      setKeyConcepts(concepts || '');
+    } catch (error: any) {
+      console.error("Error fetching roadmap:", error);
+      const errorMsg = error.message || "";
+      if (errorMsg.includes("leaked")) {
+        alert("Your Gemini API key has been reported as leaked. Please provide a new, fresh API key.");
+      } else {
+        alert("Failed to generate roadmap. Please check your connection and API key.");
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const fetchQuiz = async (category: string, level: string) => {
     setLoading(true);
-    const res = await generateQuizQuestion(category, quizLanguage, level);
-    setQuiz(res);
-    setLoading(false);
+    try {
+      const res = await generateQuizQuestion(category, quizLanguage, level);
+      setQuiz(res);
+    } catch (error: any) {
+      console.error("Error fetching quiz:", error);
+      const errorMsg = error.message || "";
+      if (errorMsg.includes("leaked")) {
+        alert("Your Gemini API key has been reported as leaked. Please provide a new, fresh API key.");
+      } else {
+        alert("Failed to generate quiz. Please try again.");
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const fetchScheduleFromRoadmap = async () => {
@@ -1231,17 +1259,25 @@ END:VCALENDAR`;
 
     useEffect(() => {
       if (!user) return;
+      // Query without orderBy to avoid composite index requirement
       const q = query(
         collection(db, "chats"),
-        where("userId", "==", user.uid),
-        orderBy("createdAt", "asc")
+        where("userId", "==", user.uid)
       );
       const unsubscribe = onSnapshot(q, (snapshot) => {
-        const msgs = snapshot.docs.map(doc => ({
-          role: doc.data().role,
-          text: doc.data().text
-        }));
+        const msgs = snapshot.docs
+          .map(doc => ({
+            role: doc.data().role,
+            text: doc.data().text,
+            createdAt: doc.data().createdAt?.toMillis() || 0
+          }))
+          // Sort client-side by createdAt
+          .sort((a, b) => a.createdAt - b.createdAt)
+          .map(({ role, text }) => ({ role, text }));
+        
         setMessages(msgs);
+      }, (error) => {
+        console.error("Error fetching chat history:", error);
       });
       return () => unsubscribe();
     }, [user]);
