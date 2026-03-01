@@ -1,20 +1,55 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# PlacementPro AI
 
-# Run and deploy your AI Studio app
+PlacementPro AI is a comprehensive career assistant designed to help students and professionals navigate their tech career journey. It provides personalized roadmaps, study schedules, course recommendations, and an AI-powered career assistant.
 
-This contains everything you need to run your app locally.
+## Features
 
-View your app in AI Studio: https://ai.studio/apps/5bf922f3-8de9-4623-b843-6b1b845c22db
+- **AI Career Assistant**: Get personalized advice and answers to your career questions.
+- **Personalized Roadmaps**: Generate 8-week learning paths based on your interests and current skill level.
+- **Daily Study Schedules**: Convert your roadmap into a structured daily plan.
+- **Course Recommendations**: Discover high-quality, up-to-date learning resources.
+- **Job Openings**: Find relevant roles in your preferred location.
+- **LinkedIn Optimization**: Generate professional summaries and experience sections.
+- **Skill Quizzes**: Test your knowledge with AI-generated coding challenges.
+- **Community Projects**: Share and discover projects from other users.
 
-## Run Locally
+## Tech Stack
 
-**Prerequisites:**  Node.js
+- **Frontend**: React, Tailwind CSS, Motion (Framer Motion)
+- **Backend/Database**: Firebase (Auth, Firestore, Storage)
+- **AI**: Google Gemini API
+- **Icons**: Lucide React
 
+## Getting Started
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/manikantakamisetty/Placement_starter.git
+   ```
+
+2. **Install dependencies**:
+   ```bash
+   npm install
+   ```
+
+3. **Set up environment variables**:
+   Create a `.env` file in the root directory and add your Gemini API key:
+   ```env
+   GEMINI_API_KEY=your_api_key_here
+   ```
+
+4. **Run the development server**:
+   ```bash
+   npm run dev
+   ```
+
+## Deployment
+
+To deploy to Firebase:
+```bash
+npm run deploy
+```
+
+## License
+
+Apache-2.0
