@@ -1,8 +1,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: "AIzaSyCPSzN0xtInKK_1-GOLHpUoMDuXbW4EKSU" });
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "AIzaSyCPSzN0xtInKK_1-GOLHpUoMDuXbW4EKSU" });
 
-export const geminiModel = "gemini-3-flash-preview";
+export const geminiModel = "gemini-flash-latest";
 
 export async function generateDomainTopics(domains: string[], courses: string) {
   const response = await ai.models.generateContent({
@@ -111,9 +111,14 @@ export async function generateQuizQuestion(domain: string, language: string, lev
     }
   });
   const text = response.text || "{}";
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  const jsonStr = jsonMatch ? jsonMatch[0] : text;
-  return JSON.parse(jsonStr);
+  try {
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    const jsonStr = jsonMatch ? jsonMatch[0] : text;
+    return JSON.parse(jsonStr);
+  } catch (e) {
+    console.error("Failed to parse quiz JSON:", text);
+    return {};
+  }
 }
 
 export async function compareCredits(projectCredits: number, contributionCredits: number, developerCredits: number) {
